@@ -1,0 +1,20 @@
+name: lineardb
+type: tool
+description: Local Linear data-model mirror and analytics layer.
+repo: eidos-agi/lineardb
+forges:
+  - forge-forge
+  - foss-forge
+  - ship-forge
+capabilities:
+  - account-scoped Linear credential profiles
+  - read-only Linear GraphQL mirror sync
+  - SQLite current-state and time-series task schema
+  - comments, attachments, history, and state-span capture
+  - local analytics over mirrored task data
+verification:
+  command: python verify.py
+boundaries:
+  - no Linear write mutations
+  - no credential persistence in repository files
+  - explicit account profiles fail closed

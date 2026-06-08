@@ -1,0 +1,47 @@
+format_version: 1
+
+forges:
+  forge-forge:
+    installed: 2026-06-08
+    skill_used: forge-manifest-init
+    artifacts:
+      - .forge/manifest.yaml
+      - .forge/installed.yaml
+    notes: "Repo-local forge manifest and provenance record."
+  foss-forge:
+    installed: 2026-06-08
+    skill_used: foss-init
+    artifacts:
+      - LICENSE
+      - CONTRIBUTING.md
+      - CHANGELOG.md
+      - CODE_OF_CONDUCT.md
+      - SECURITY.md
+    notes: "Community health and open-source readiness files."
+  ship-forge:
+    installed: 2026-06-08
+    skill_used: ship-init
+    artifacts:
+      - .github/workflows/ci.yml
+      - .pre-commit-config.yaml
+      - verify.py
+    notes: "Local verification gate and CI workflow."
+  security-forge:
+    installed: 2026-06-08
+    skill_used: sec-scan
+    artifacts:
+      - scripts/security_scan.py
+      - SECURITY.md
+    notes: "Fast local secret scan included in verify.py."
+  loss-forge:
+    installed: 2026-06-08
+    skill_used: loss-init
+    artifacts:
+      - LOSS-BASELINE.md
+    notes: "Initial mission/loss baseline for mirror correctness and credential safety."
+  improve-forge:
+    installed: 2026-06-08
+    skill_used: improve
+    artifacts:
+      - improvements/2026-06-08-lineardb-v1.json
+    notes: "Initial improvement snapshot after adding FOSS, ship, security, and site surfaces."

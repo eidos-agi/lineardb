@@ -1,0 +1,30 @@
+[project]
+name = "lineardb"
+version = "0.1.0"
+description = "Local SQLite mirror and analytics layer for Linear data."
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+authors = [
+  { name = "Eidos AGI", email = "daniel@eidosagi.com" }
+]
+keywords = ["linear", "sqlite", "graphql", "analytics", "mirror", "eidos-agi"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+lineardb = "lineardb.cli:main"
+
+[project.urls]
+Homepage = "https://eidosagi.com/tools/lineardb"
+Repository = "https://github.com/eidos-agi/lineardb"
+Issues = "https://github.com/eidos-agi/lineardb/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: lineardb-verify
+        name: lineardb verify
+        entry: python verify.py
+        language: system
+        pass_filenames: false

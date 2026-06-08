@@ -1,0 +1,41 @@
+{
+  "date": "2026-06-08",
+  "project": "lineardb",
+  "scores": {
+    "reliability": 7,
+    "performance": 6,
+    "ux": 7,
+    "security": 7,
+    "code_quality": 7,
+    "documentation": 8,
+    "packaging": 6,
+    "vision_alignment": 9,
+    "production_readiness": 6,
+    "contracts": 5
+  },
+  "overall": 6.9,
+  "applicable_dimensions": 10,
+  "focus": "packaging",
+  "improvement": "Added FOSS files, CI, forge provenance, local security scan, verification gate, and eidosagi.com tool page.",
+  "files_changed": [
+    "README.md",
+    "PLAN.md",
+    "verify.py",
+    ".github/workflows/ci.yml",
+    ".forge/manifest.yaml",
+    ".forge/installed.yaml",
+    "scripts/security_scan.py"
+  ],
+  "delta": {
+    "packaging": {
+      "before": 3,
+      "after": 6
+    },
+    "security": {
+      "before": 5,
+      "after": 7
+    }
+  },
+  "next_priority": "Add explicit schema contracts for SQLite outputs and run a live Greenmark sync after credentials are injected.",
+  "agent": "improve-forge"
+}
