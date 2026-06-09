@@ -88,13 +88,135 @@ Blocked for live Greenmark proof:
   `LINEARDB_GREENMARK_OAUTH_CLIENT_ID/LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET`,
   and the `greenmark` OAuth profile has not been connected locally.
 
-## Next Planned Work
+## Live Bring-Up Plan
 
-1. Add the LinearDB OAuth app client id/secret through local secret injection,
-   not chat.
-2. Run `connect` and approve with `daniel@eidosagi.com`.
-3. Run `auth-check` and confirm `has_required_team` is true for `GMW`.
-4. Run a fast `sync --skip-related` proof.
-5. Run a full related-data sync.
-6. Add multi-account database support if one SQLite database needs to hold more
-   than one account profile at the same time.
+### Stage 1: OAuth App And Secret Injection
+
+Goal: make the local `greenmark` profile capable of starting the OAuth install
+without exposing secrets in chat or repo files.
+
+- Create or reuse the LinearDB OAuth app.
+- Configure callback URL `http://localhost:8721/oauth/callback`.
+- Keep scope read-only: `read`.
+- Inject `LINEARDB_GREENMARK_OAUTH_CLIENT_ID` and
+  `LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET` through a local shell, Keychain, or
+  Daniel-owned secret manager.
+- Prove presence without printing values.
+- Run `bin/lineardb --account greenmark connect --dry-run`.
+
+Exit criteria:
+
+- Dry-run emits an authorize URL.
+- Dry-run shows `expected_email: daniel@eidosagi.com`.
+- Dry-run shows `required_team_key: GMW`.
+
+### Stage 2: OAuth Install And Many-Team Validation
+
+Goal: connect Daniel's `daniel@eidosagi.com` Linear login and prove that the
+single OAuth token can see many teams while requiring `GMW`.
+
+- Run `bin/lineardb --account greenmark connect`.
+- Approve with the `daniel@eidosagi.com` Linear login.
+- Query `~/.lineardb/credentials.sqlite` for `oauth_tokens` metadata.
+- Query `oauth_token_teams` and confirm it contains all visible team keys, not
+  only `GMW`.
+- Confirm exactly one row is marked `validated_required = 1` for `GMW`.
+
+Exit criteria:
+
+- Stored token profile is `greenmark`.
+- Stored viewer email is `daniel@eidosagi.com`.
+- `oauth_token_teams` contains `GMW` plus the other teams visible to Daniel.
+- No token values are printed or written to repo files.
+
+### Stage 3: Fast Mirror Proof
+
+Goal: prove the mirror can write a local SQLite database across all visible
+teams without the slower related-data crawl.
+
+- Run `bin/lineardb --account greenmark auth-check --team-key GMW`.
+- Run:
+
+  ```bash
+  bin/lineardb --account greenmark sync \
+    --sqlite outputs/greenmark-linear.sqlite \
+    --skip-related
+  ```
+
+- Query `account_profiles`, `account_organizations`, `account_teams`, `teams`,
+  `issues`, `projects`, and `team_projects`.
+- Confirm `account_teams` contains many teams for `greenmark`.
+- Confirm `issues` are distributed across team keys.
+
+Exit criteria:
+
+- `auth-check` returns `has_required_team: true`.
+- SQLite file exists under `outputs/`.
+- `account_teams` has more than one team when Daniel's login exposes more than
+  one team.
+- `GMW` issues are present and filterable.
+
+### Stage 4: Full Related-Data Sync
+
+Goal: collect the full task context needed for analytics and time-series work.
+
+- Run:
+
+  ```bash
+  bin/lineardb --account greenmark sync \
+    --sqlite outputs/greenmark-linear.sqlite
+  ```
+
+- Validate row counts for `comments`, `attachments`, `issue_history`, and
+  `issue_state_spans`.
+- Confirm `sync_runs` and `issue_snapshots` record the run.
+- Re-run sync once to confirm time-series snapshots append by run id while
+  current-state tables refresh.
+
+Exit criteria:
+
+- Full sync completes without replacing a previous good database on failure.
+- Related tables are populated when Linear returns related records.
+- `issue_snapshots` has at least one run per completed sync.
+
+### Stage 5: Analytics Proof
+
+Goal: prove local-only analytics over the mirror, with Greenmark filtered views
+and many-team account-level views.
+
+- Run:
+
+  ```bash
+  bin/lineardb analytics \
+    --sqlite outputs/greenmark-linear.sqlite \
+    --team-key GMW
+  ```
+
+- Add or run an account-level analytics command/report that does not filter to
+  `GMW`.
+- Compare counts from `analytics.teams` to SQL counts from `issues`.
+
+Exit criteria:
+
+- GMW analytics return task totals, states, assignees, projects, labels, stale
+  samples, and snapshot history.
+- Account-level analytics show all visible teams for Daniel's login.
+- SQL counts and analytics counts agree.
+
+### Stage 6: Product Hardening
+
+Goal: turn the proof into a durable local product surface.
+
+- Add a `relationships` or `inspect` CLI command that prints non-secret account,
+  organization, team, project, and token-team relationships.
+- Add regression tests for many-team sync from one account profile.
+- Add docs for common SQL joins over `account_teams`, `team_projects`, and
+  `issue_snapshots`.
+- Decide whether the single SQLite mirror should support multiple account
+  profiles in one file before adding a second login.
+
+Exit criteria:
+
+- A user can inspect relationships without opening SQLite manually.
+- The many-team account model is tested and documented.
+- Adding a second OAuth login is a schema extension, not a redesign.

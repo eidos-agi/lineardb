@@ -26,6 +26,9 @@ This directory now contains the standalone LinearDB package and CLI:
 
 The product plan and acceptance criteria live in `PLAN.md`.
 
+The live Greenmark setup runbook lives in
+`docs/greenmark-live-bringup.md`.
+
 ## Install
 
 Until the first release is tagged, install from source:
