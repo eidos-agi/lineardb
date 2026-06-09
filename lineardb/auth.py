@@ -315,7 +315,12 @@ def write_token_record(account: str, record: dict[str, Any]) -> None:
     os.chmod(path, 0o600)
 
 
-def update_token_identity(account: str, viewer: dict[str, Any], team_key: str) -> None:
+def update_token_identity(
+    account: str,
+    viewer: dict[str, Any],
+    team_key: str,
+    teams: list[dict[str, Any]] | None = None,
+) -> None:
     record = load_token_record(account)
     if not record:
         raise MissingCredentialError(f"No stored OAuth token exists for {account}.")
@@ -330,10 +335,11 @@ def update_token_identity(account: str, viewer: dict[str, Any], team_key: str) -
         }
     )
     write_token_record(account, record)
+    write_token_teams(account, teams or [], team_key)
 
 
 def create_token_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
+    connection.executescript(
         """
         create table if not exists oauth_tokens (
           account text primary key,
@@ -348,9 +354,49 @@ def create_token_schema(connection: sqlite3.Connection) -> None:
           organization_id text,
           organization_name text,
           team_key text
-        )
+        );
+        create table if not exists oauth_token_teams (
+          account text not null,
+          team_id text,
+          team_key text not null,
+          team_name text,
+          validated_required integer not null default 0,
+          updated_at integer not null,
+          primary key (account, team_key),
+          foreign key (account) references oauth_tokens(account) on delete cascade
+        );
         """
     )
+
+
+def write_token_teams(account: str, teams: list[dict[str, Any]], required_team_key: str) -> None:
+    path = token_store_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute("pragma foreign_keys = on")
+        create_token_schema(connection)
+        now = int(time.time())
+        connection.execute("delete from oauth_token_teams where account = ?", (account,))
+        for team in teams:
+            key = team.get("key")
+            if not key:
+                continue
+            connection.execute(
+                """
+                insert or replace into oauth_token_teams(
+                  account, team_id, team_key, team_name, validated_required, updated_at
+                ) values (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    account,
+                    team.get("id"),
+                    key,
+                    team.get("name"),
+                    int(key == required_team_key),
+                    now,
+                ),
+            )
+        connection.commit()
 
 
 def redact_secret(value: str, token: str | None = None) -> str:

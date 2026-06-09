@@ -30,14 +30,15 @@ def write_mirror_sqlite(dump: dict[str, Any], db_path: str | os.PathLike[str]) -
 def write_mirror_sqlite_file(dump: dict[str, Any], db_path: str | os.PathLike[str]) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as connection:
-        connection.execute("pragma foreign_keys = off")
+        connection.execute("pragma foreign_keys = on")
         create_schema(connection)
         run_id = current_run_id()
         captured_at = current_timestamp()
+        account_profile = ((dump.get("account") or {}).get("profile")) or "default"
         clear_current_tables(connection)
         insert_sync_run(connection, run_id, captured_at, dump)
         for team in dump.get("teams") or []:
-            upsert_team(connection, team)
+            upsert_team(connection, team, account_profile=account_profile)
         for issue in dump.get("issues") or []:
             upsert_issue_related_records(connection, issue)
             upsert_issue(connection, issue)
@@ -77,11 +78,32 @@ def create_schema(connection: sqlite3.Connection) -> None:
           organization_url_key text,
           raw_json text not null
         );
+        create table if not exists organizations (
+          id text primary key,
+          name text,
+          url_key text,
+          raw_json text not null
+        );
+        create table if not exists account_organizations (
+          profile text not null,
+          organization_id text not null,
+          primary key (profile, organization_id),
+          foreign key (profile) references account_profiles(profile) on delete cascade,
+          foreign key (organization_id) references organizations(id) on delete cascade
+        );
         create table if not exists teams (
           id text primary key,
           key text,
           name text,
           raw_json text not null
+        );
+        create table if not exists account_teams (
+          profile text not null,
+          team_id text not null,
+          team_key text,
+          primary key (profile, team_id),
+          foreign key (profile) references account_profiles(profile) on delete cascade,
+          foreign key (team_id) references teams(id) on delete cascade
         );
         create table if not exists users (
           id text primary key,
@@ -93,6 +115,13 @@ def create_schema(connection: sqlite3.Connection) -> None:
           name text,
           url text,
           raw_json text not null
+        );
+        create table if not exists team_projects (
+          team_id text not null,
+          project_id text not null,
+          primary key (team_id, project_id),
+          foreign key (team_id) references teams(id) on delete cascade,
+          foreign key (project_id) references projects(id) on delete cascade
         );
         create table if not exists labels (
           id text primary key,
@@ -214,12 +243,16 @@ def create_schema(connection: sqlite3.Connection) -> None:
 def clear_current_tables(connection: sqlite3.Connection) -> None:
     for table in [
         "metadata",
+        "team_projects",
+        "account_teams",
+        "account_organizations",
         "issue_labels",
         "issues",
         "labels",
         "projects",
         "users",
         "teams",
+        "organizations",
         "account_profiles",
         "comments",
         "attachments",
@@ -270,13 +303,38 @@ def upsert_account_profile(connection: sqlite3.Connection, account: dict[str, An
             json.dumps(account, sort_keys=True),
         ),
     )
+    if organization.get("id"):
+        connection.execute(
+            "insert or replace into organizations(id, name, url_key, raw_json) values (?, ?, ?, ?)",
+            (
+                organization.get("id"),
+                organization.get("name"),
+                organization.get("urlKey"),
+                json.dumps(organization, sort_keys=True),
+            ),
+        )
+        connection.execute(
+            "insert or replace into account_organizations(profile, organization_id) values (?, ?)",
+            (profile, organization.get("id")),
+        )
 
 
-def upsert_team(connection: sqlite3.Connection, team: dict[str, Any]) -> None:
+def upsert_team(connection: sqlite3.Connection, team: dict[str, Any], account_profile: str | None = None) -> None:
     connection.execute(
-        "insert or replace into teams(id, key, name, raw_json) values (?, ?, ?, ?)",
+        """
+        insert into teams(id, key, name, raw_json) values (?, ?, ?, ?)
+        on conflict(id) do update set
+          key = excluded.key,
+          name = excluded.name,
+          raw_json = excluded.raw_json
+        """,
         (team.get("id"), team.get("key"), team.get("name"), json.dumps(team, sort_keys=True)),
     )
+    if account_profile and team.get("id"):
+        connection.execute(
+            "insert or replace into account_teams(profile, team_id, team_key) values (?, ?, ?)",
+            (account_profile, team.get("id"), team.get("key")),
+        )
 
 
 def upsert_issue_related_records(connection: sqlite3.Connection, issue: dict[str, Any]) -> None:
@@ -292,9 +350,20 @@ def upsert_issue_related_records(connection: sqlite3.Connection, issue: dict[str
     project = issue.get("project") or {}
     if project.get("id"):
         connection.execute(
-            "insert or replace into projects(id, name, url, raw_json) values (?, ?, ?, ?)",
+            """
+            insert into projects(id, name, url, raw_json) values (?, ?, ?, ?)
+            on conflict(id) do update set
+              name = excluded.name,
+              url = excluded.url,
+              raw_json = excluded.raw_json
+            """,
             (project.get("id"), project.get("name"), project.get("url"), json.dumps(project, sort_keys=True)),
         )
+        if team.get("id"):
+            connection.execute(
+                "insert or replace into team_projects(team_id, project_id) values (?, ?)",
+                (team.get("id"), project.get("id")),
+            )
     for label in (issue.get("labels") or {}).get("nodes") or []:
         label_id = label.get("id") or label.get("name")
         if not label_id:

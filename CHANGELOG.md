@@ -5,6 +5,8 @@
 - Added standalone `lineardb` package and CLI.
 - Added OAuth installed-user `connect` flow with a local callback server.
 - Added local SQLite credential storage with access-token refresh support.
+- Added explicit relationship tables for OAuth-token teams, account
+  organizations, account teams, and team projects.
 - Added account-scoped OAuth resolution with fail-closed explicit accounts.
 - Made `greenmark` default to viewer `daniel@eidosagi.com` and team `GMW`.
 - Added read-only Linear GraphQL mirror sync into SQLite.

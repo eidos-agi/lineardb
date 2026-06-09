@@ -93,9 +93,13 @@ bin/lineardb analytics \
 Current-state tables:
 
 - `account_profiles`
+- `organizations`
+- `account_organizations`
+- `account_teams`
 - `teams`
 - `users`
 - `projects`
+- `team_projects`
 - `labels`
 - `issue_labels`
 - `issues`
@@ -111,6 +115,15 @@ Time-series and related-data tables:
 
 Every object table keeps `raw_json` so the mirror can preserve Linear fields
 before every field has a first-class column.
+
+Relationship tables are intentionally explicit:
+
+- `account_organizations` ties a local account profile to the Linear
+  organization/workspace returned by OAuth.
+- `account_teams` ties that account profile to visible teams.
+- `team_projects` ties teams to projects discovered through issues.
+- The credential store also keeps `oauth_token_teams`, tying an OAuth token
+  account to the teams validated during `connect`.
 
 ## Analytics
 

@@ -70,6 +70,8 @@ Implemented:
 - Token-safe Linear GraphQL client with retry for transient failures.
 - Account mirror collection across visible teams.
 - Viewer/organization metadata captured in `account_profiles`.
+- Explicit relationship tables for `account_organizations`, `account_teams`,
+  `team_projects`, and credential-store `oauth_token_teams`.
 - SQLite current-state tables and time-series `issue_snapshots`.
 - Related issue tables for comments, attachments, history, and state spans.
 - Atomic SQLite writes that preserve the prior database on write failure.
