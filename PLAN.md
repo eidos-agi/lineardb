@@ -8,7 +8,7 @@ a replacement Linear UI and not a write-back task management product.
 LinearDB owns:
 
 - Account-scoped credential profiles.
-- OAuth/client-credentials and personal-key fallback resolution.
+- OAuth installed-user credential profiles with refresh-token rotation.
 - Workspace identity and visible team validation.
 - Read-only Linear GraphQL collection.
 - Local SQLite mirror schema.
@@ -24,12 +24,15 @@ LinearPlus owns:
 
 ## V1 Scope
 
-The first planned slice is a single explicit account profile, usually
-`greenmark`, mirrored into one SQLite database.
+The first planned slice is a single explicit account profile, `greenmark`,
+connected through Daniel's `daniel@eidosagi.com` Linear login and mirrored into
+one SQLite database.
 
 Accepted account hierarchy:
 
 - `account_profile`: local credential/profile name such as `greenmark`.
+- `viewer`: Linear user identity returned by OAuth, expected to be
+  `daniel@eidosagi.com` for `greenmark`.
 - `organization`: Linear workspace identity returned by `viewer.organization`.
 - `team`: Linear team such as `GMW`.
 - `issue`: Linear task within a team.
@@ -43,8 +46,11 @@ Linear organization and multiple teams, depending on the credential.
 V1 is plan-ready when all of these are true:
 
 - `bin/lineardb --account greenmark auth-check --team-key GMW` fails closed
-  without falling back to ambient credentials when no Greenmark credential is
-  present.
+  without falling back to ambient credentials or personal API keys when no
+  Greenmark OAuth installation is present.
+- `bin/lineardb --account greenmark connect` performs a local OAuth callback,
+  validates viewer email `daniel@eidosagi.com`, validates team `GMW`, and then
+  stores the token record locally.
 - `bin/lineardb --account greenmark sync --dry-run` reports the intended local
   SQLite path without calling Linear.
 - `bin/lineardb sync` mirrors teams, issues, snapshots, comments, attachments,
@@ -58,6 +64,9 @@ V1 is plan-ready when all of these are true:
 Implemented:
 
 - Account-scoped credential resolution with fail-closed explicit accounts.
+- Local OAuth callback flow for installed user accounts.
+- Stored OAuth access/refresh tokens with refresh-token rotation.
+- Default `greenmark` validation for `daniel@eidosagi.com` and `GMW`.
 - Token-safe Linear GraphQL client with retry for transient failures.
 - Account mirror collection across visible teams.
 - Viewer/organization metadata captured in `account_profiles`.
@@ -69,17 +78,17 @@ Implemented:
 
 Blocked for live Greenmark proof:
 
-- This shell does not currently contain `LINEARDB_GREENMARK_LINEAR_API_KEY` or
-  `LINEARDB_GREENMARK_OAUTH_CLIENT_ID/LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET`.
+- This shell does not currently contain
+  `LINEARDB_GREENMARK_OAUTH_CLIENT_ID/LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET`,
+  and the `greenmark` OAuth profile has not been connected locally.
 
 ## Next Planned Work
 
-1. Add a valid Greenmark OAuth/client-credentials profile through local secret
-   injection, not chat.
-2. Run `auth-check` and confirm `has_required_team` is true for `GMW`.
-3. Run a fast `sync --skip-related` proof.
-4. Run a full related-data sync.
-5. Point LinearPlus compatibility commands at LinearDB instead of maintaining
-   duplicated sync/auth code.
+1. Add the LinearDB OAuth app client id/secret through local secret injection,
+   not chat.
+2. Run `connect` and approve with `daniel@eidosagi.com`.
+3. Run `auth-check` and confirm `has_required_team` is true for `GMW`.
+4. Run a fast `sync --skip-related` proof.
+5. Run a full related-data sync.
 6. Add multi-account database support if one SQLite database needs to hold more
    than one account profile at the same time.
