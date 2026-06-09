@@ -89,6 +89,7 @@ def build_exec_brief(db_path: Path, team_key: str | None, limit: int, now: datet
         "decision_queue": decision_queue,
         "project_risk": project_risk(scored),
         "aging": aging_buckets(scored),
+        "visuals": visual_datasets(scored),
     }
 
 
@@ -305,6 +306,46 @@ def aging_buckets(issues: list[dict[str, Any]]) -> dict[str, int]:
     return buckets
 
 
+def visual_datasets(issues: list[dict[str, Any]]) -> dict[str, Any]:
+    open_issues = [issue for issue in issues if issue["is_open"]]
+    return {
+        "blocker_labels": top_label_distribution(open_issues, "blocker_labels"),
+        "exec_labels": top_label_distribution(open_issues, "exec_labels"),
+        "owners": owner_distribution(open_issues),
+        "states": value_distribution(open_issues, "state", limit=8),
+        "priority": value_distribution(open_issues, "priority", limit=6),
+        "max_score": max((issue["score"] for issue in open_issues), default=0),
+    }
+
+
+def top_label_distribution(issues: list[dict[str, Any]], key: str, limit: int = 8) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        for label in issue[key]:
+            counts[label] = counts.get(label, 0) + 1
+    return sorted(
+        [{"label": label, "count": count} for label, count in counts.items()],
+        key=lambda item: (-item["count"], item["label"]),
+    )[:limit]
+
+
+def owner_distribution(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    assigned = sum(1 for issue in issues if issue["assignee"] != "Unassigned")
+    unassigned = sum(1 for issue in issues if issue["assignee"] == "Unassigned")
+    return [{"label": "Assigned", "count": assigned}, {"label": "Unassigned", "count": unassigned}]
+
+
+def value_distribution(issues: list[dict[str, Any]], key: str, limit: int) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        label = issue[key] or "None"
+        counts[label] = counts.get(label, 0) + 1
+    return sorted(
+        [{"label": label, "count": count} for label, count in counts.items()],
+        key=lambda item: (-item["count"], item["label"]),
+    )[:limit]
+
+
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -324,8 +365,14 @@ def default_output_path(db_path: Path, team_key: str | None) -> Path:
 
 
 def render_html(report: dict[str, Any]) -> str:
+    open_count = max(report["metrics"]["open"], 1)
     metrics_html = "\n".join(
-        f"<div class=\"metric\"><span>{escape(label)}</span><strong>{value}</strong></div>"
+        f"""
+        <div class=\"metric\">
+          <span>{escape(label)}</span>
+          <strong>{value}</strong>
+          <div class=\"meter\"><i style=\"width: {percent(value, open_count)}%\"></i></div>
+        </div>"""
         for label, value in [
             ("Open", report["metrics"]["open"]),
             ("High Priority", report["metrics"]["open_high_priority"]),
@@ -335,12 +382,15 @@ def render_html(report: dict[str, Any]) -> str:
             ("Finance / Compliance / Security", report["metrics"]["finance_compliance_security"]),
         ]
     )
-    decision_rows = "\n".join(render_decision_row(issue) for issue in report["decision_queue"])
-    project_rows = "\n".join(render_project_row(project) for project in report["project_risk"])
-    aging_html = "\n".join(
-        f"<div class=\"age\"><span>{escape(bucket)}</span><strong>{count}</strong></div>"
-        for bucket, count in report["aging"].items()
-    )
+    max_score = report["visuals"]["max_score"]
+    decision_rows = "\n".join(render_decision_row(issue, max_score) for issue in report["decision_queue"])
+    project_rows = "\n".join(render_project_row(project, max_project_risk(report["project_risk"])) for project in report["project_risk"])
+    aging_html = render_bar_chart(report["aging"])
+    blocker_mix = render_bar_list(report["visuals"]["blocker_labels"], "No blocker labels found")
+    exec_mix = render_bar_list(report["visuals"]["exec_labels"], "No finance/compliance/security labels found")
+    owner_mix = render_stacked_bar(report["visuals"]["owners"])
+    state_mix = render_bar_list(report["visuals"]["states"], "No open states found")
+    priority_mix = render_bar_list(report["visuals"]["priority"], "No priorities found")
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
@@ -358,6 +408,8 @@ def render_html(report: dict[str, Any]) -> str:
       --amber: #9a5d00;
       --red: #9e2f2f;
       --blue: #285f8f;
+      --fill: #2e7d63;
+      --fill-soft: #dcefe8;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -375,15 +427,28 @@ def render_html(report: dict[str, Any]) -> str:
     .sub {{ color: var(--muted); margin-top: 4px; }}
     .grid {{ display: grid; grid-template-columns: 1fr 360px; gap: 18px; }}
     .metrics {{ display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; margin-bottom: 18px; }}
-    .metric, .age {{
+    .metric {{
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       min-height: 76px;
     }}
-    .metric span, .age span {{ display: block; color: var(--muted); font-size: 12px; }}
-    .metric strong, .age strong {{ display: block; margin-top: 8px; font-size: 28px; }}
+    .metric span {{ display: block; color: var(--muted); font-size: 12px; }}
+    .metric strong {{ display: block; margin-top: 8px; font-size: 28px; }}
+    .meter, .bar-track {{
+      height: 7px;
+      background: #e9ece4;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 8px;
+    }}
+    .meter i, .bar-track i {{
+      display: block;
+      height: 100%;
+      background: var(--fill);
+      border-radius: 999px;
+    }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -404,8 +469,24 @@ def render_html(report: dict[str, Any]) -> str:
     .ok {{ background: #ddf1e7; color: var(--green); }}
     .reason {{ color: #30352d; }}
     .comment {{ color: var(--muted); font-size: 12px; margin-top: 5px; }}
-    .aging {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+    .visual-stack {{ display: grid; gap: 14px; }}
+    .chart-title {{ margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }}
+    .bar-row {{ display: grid; grid-template-columns: minmax(84px, 1fr) 52px; gap: 10px; align-items: center; margin: 8px 0; }}
+    .bar-label {{ min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; }}
+    .bar-value {{ color: var(--muted); font-size: 12px; text-align: right; }}
+    .bar-track {{ grid-column: 1 / -1; margin-top: -4px; }}
+    .stacked {{ display: flex; height: 28px; border-radius: 7px; overflow: hidden; background: #e9ece4; border: 1px solid var(--line); }}
+    .stacked span {{ display: block; height: 100%; }}
+    .stacked .assigned {{ background: var(--fill); }}
+    .stacked .unassigned {{ background: var(--red); }}
+    .legend {{ display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 12px; }}
+    .score-block {{ min-width: 56px; }}
     .score {{ font-size: 22px; font-weight: 800; }}
+    .score-bar {{ width: 64px; height: 6px; background: #e9ece4; border-radius: 999px; overflow: hidden; margin-top: 4px; }}
+    .score-bar i {{ display: block; height: 100%; background: var(--red); border-radius: 999px; }}
+    .risk-cell {{ min-width: 86px; }}
+    .risk-cell strong {{ display: block; }}
+    .empty {{ color: var(--muted); font-size: 12px; }}
     @media (max-width: 980px) {{
       main {{ padding: 16px; }}
       header {{ display: block; }}
@@ -444,7 +525,37 @@ def render_html(report: dict[str, Any]) -> str:
       <aside>
         <section>
           <h2>Blocker Aging</h2>
-          <div class=\"aging\">{aging_html}</div>
+          <div class=\"visual-stack\">{aging_html}</div>
+        </section>
+        <section>
+          <h2>Risk Mix</h2>
+          <div class=\"visual-stack\">
+            <div>
+              <p class=\"chart-title\">Blocker Labels</p>
+              {blocker_mix}
+            </div>
+            <div>
+              <p class=\"chart-title\">Finance / Compliance / Security</p>
+              {exec_mix}
+            </div>
+          </div>
+        </section>
+        <section>
+          <h2>Ownership And Flow</h2>
+          <div class=\"visual-stack\">
+            <div>
+              <p class=\"chart-title\">Owner Gap</p>
+              {owner_mix}
+            </div>
+            <div>
+              <p class=\"chart-title\">State Mix</p>
+              {state_mix}
+            </div>
+            <div>
+              <p class=\"chart-title\">Priority Mix</p>
+              {priority_mix}
+            </div>
+          </div>
         </section>
       </aside>
     </div>
@@ -454,19 +565,20 @@ def render_html(report: dict[str, Any]) -> str:
 """
 
 
-def render_decision_row(issue: dict[str, Any]) -> str:
+def render_decision_row(issue: dict[str, Any], max_score: int) -> str:
     labels = "".join(f"<span class=\"pill risk\">{escape(label)}</span>" for label in issue["blocker_labels"] + issue["exec_labels"])
     priority_class = "high" if issue["priority"] in {"Urgent", "High"} else "ok"
     comment = ""
     if issue["latest_comment"]:
         comment = f"<div class=\"comment\">Latest: {escape(issue['latest_comment']['body'])}</div>"
+    score_width = percent(issue["score"], max_score)
     return f"""
     <tr>
       <td><a href=\"{escape(issue['url'] or '#')}\">{escape(issue['identifier'] or '')}</a><span class=\"issue-title\">{escape(issue['title'] or '')}</span><div class=\"meta\">{escape(issue['project'])} · {escape(issue['state'] or '')}</div></td>
       <td><span class=\"pill {priority_class}\">{escape(issue['priority'])}</span>{labels}<div class=\"reason\">{escape(issue['reason'])}</div>{comment}</td>
       <td>{escape(issue['assignee'])}</td>
       <td>{issue['days_stale']}d stale{state_age(issue)}</td>
-      <td><span class=\"score\">{issue['score']}</span></td>
+      <td><div class=\"score-block\"><span class=\"score\">{issue['score']}</span><div class=\"score-bar\"><i style=\"width: {score_width}%\"></i></div></div></td>
     </tr>"""
 
 
@@ -476,7 +588,7 @@ def state_age(issue: dict[str, Any]) -> str:
     return f"<div class=\"meta\">{issue['state_span_days']}d in state</div>"
 
 
-def render_project_row(project: dict[str, Any]) -> str:
+def render_project_row(project: dict[str, Any], max_risk: int) -> str:
     return f"""
     <tr>
       <td>{escape(project['project'])}</td>
@@ -485,8 +597,51 @@ def render_project_row(project: dict[str, Any]) -> str:
       <td>{project['blocked']}</td>
       <td>{project['stale']}</td>
       <td>{project['unassigned']}</td>
-      <td><strong>{project['risk_score']}</strong></td>
+      <td><div class=\"risk-cell\"><strong>{project['risk_score']}</strong><div class=\"bar-track\"><i style=\"width: {percent(project['risk_score'], max_risk)}%\"></i></div></div></td>
     </tr>"""
+
+
+def max_project_risk(projects: list[dict[str, Any]]) -> int:
+    return max((project["risk_score"] for project in projects), default=1)
+
+
+def render_bar_chart(values: dict[str, int]) -> str:
+    rows = [{"label": label, "count": count} for label, count in values.items()]
+    return render_bar_list(rows, "No values found")
+
+
+def render_bar_list(rows: list[dict[str, Any]], empty_text: str) -> str:
+    if not rows:
+        return f"<div class=\"empty\">{escape(empty_text)}</div>"
+    max_count = max((int(row["count"]) for row in rows), default=1)
+    return "\n".join(
+        f"""
+        <div class=\"bar-row\">
+          <div class=\"bar-label\">{escape(row['label'])}</div>
+          <div class=\"bar-value\">{int(row['count'])}</div>
+          <div class=\"bar-track\"><i style=\"width: {percent(int(row['count']), max_count)}%\"></i></div>
+        </div>"""
+        for row in rows
+    )
+
+
+def render_stacked_bar(rows: list[dict[str, Any]]) -> str:
+    counts = {row["label"]: int(row["count"]) for row in rows}
+    assigned = counts.get("Assigned", 0)
+    unassigned = counts.get("Unassigned", 0)
+    total = max(assigned + unassigned, 1)
+    return f"""
+    <div class=\"stacked\">
+      <span class=\"assigned\" style=\"width: {percent(assigned, total)}%\"></span>
+      <span class=\"unassigned\" style=\"width: {percent(unassigned, total)}%\"></span>
+    </div>
+    <div class=\"legend\"><span>Assigned {assigned}</span><span>Unassigned {unassigned}</span></div>"""
+
+
+def percent(value: int, denominator: int) -> int:
+    if denominator <= 0:
+        return 0
+    return max(0, min(100, round((value / denominator) * 100)))
 
 
 def escape(value: Any) -> str:

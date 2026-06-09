@@ -117,7 +117,9 @@ bin/lineardb exec-brief \
 
 The brief highlights open high-priority work, approval/blocker labels, stale
 items, unassigned work, finance/compliance/security labels, a ranked decision
-queue, project risk, and aging buckets.
+queue, project risk, and aging buckets. It includes compact visual bars for
+metrics, blocker aging, blocker labels, ownership gaps, state/priority mix,
+decision scores, and project risk.
 
 ## SQLite Tables
 
