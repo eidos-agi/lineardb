@@ -431,6 +431,8 @@ class LinearDBTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["blocked_or_approval"], 1)
         self.assertEqual(report["decision_queue"][0]["identifier"], "GMW-1")
         self.assertIn("Approval Gate", report["decision_queue"][0]["reason"])
+        self.assertIn({"label": "Approval Gate", "count": 1}, report["visuals"]["blocker_labels"])
+        self.assertEqual(report["visuals"]["owners"], [{"label": "Assigned", "count": 0}, {"label": "Unassigned", "count": 1}])
 
     def test_exec_brief_cli_writes_html_without_linear_credentials(self):
         with tempfile.TemporaryDirectory() as temp_dir:

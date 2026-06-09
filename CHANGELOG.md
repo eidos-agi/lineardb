@@ -11,6 +11,8 @@
   state spans with per-issue progress in SQLite.
 - Added `exec-brief` HTML output for a one-screen CEO/CFO blocker and project
   risk review from the local SQLite mirror.
+- Added graph-style visuals to `exec-brief` for blocker aging, risk mix,
+  ownership gaps, decision scores, and project risk.
 - Added account-scoped OAuth resolution with fail-closed explicit accounts.
 - Made `greenmark` default to viewer `daniel@eidosagi.com` and team `GMW`.
 - Added read-only Linear GraphQL mirror sync into SQLite.
