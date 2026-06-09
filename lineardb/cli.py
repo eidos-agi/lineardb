@@ -27,6 +27,7 @@ from .auth import (
     token_store_path,
     update_token_identity,
 )
+from .exec_brief import generate_exec_brief
 from .graphql import LinearGraphQLError, LinearGraphQLClient
 from .mirror import account_mirror_dump, auth_check
 from .related_sync import sync_related_sqlite
@@ -41,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        client = None if getattr(args, "dry_run", False) or args.command in {"analytics", "connect"} else build_client(args)
+        client = None if getattr(args, "dry_run", False) or args.command in {"analytics", "connect", "exec-brief"} else build_client(args)
         result = args.handler(args, client)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
@@ -109,6 +110,13 @@ def build_parser() -> argparse.ArgumentParser:
     analytics.add_argument("--team-key", help="Optional team key filter such as GMW.")
     analytics.add_argument("--sample-size", type=int, default=20)
     analytics.set_defaults(handler=handle_analytics)
+
+    exec_brief = subparsers.add_parser("exec-brief", help="Generate a one-screen CEO/CFO blocker brief from SQLite.")
+    exec_brief.add_argument("--sqlite", required=True, help="Existing SQLite mirror path.")
+    exec_brief.add_argument("--team-key", default="GMW", help="Optional team key filter such as GMW.")
+    exec_brief.add_argument("--output", help="HTML output path. Defaults beside the SQLite file.")
+    exec_brief.add_argument("--limit", type=int, default=10, help="Decision queue issue count.")
+    exec_brief.set_defaults(handler=handle_exec_brief)
 
     return parser
 
@@ -244,6 +252,12 @@ def handle_sync_related(args: argparse.Namespace, client: LinearGraphQLClient | 
 
 def handle_analytics(args: argparse.Namespace, client: LinearGraphQLClient | None) -> dict[str, Any]:
     return {"ok": True, "operation": "analytics", **sqlite_analytics(args.sqlite, args.team_key, args.sample_size)}
+
+
+def handle_exec_brief(args: argparse.Namespace, client: LinearGraphQLClient | None) -> dict[str, Any]:
+    del client
+    result = generate_exec_brief(args.sqlite, output_path=args.output, team_key=args.team_key, limit=args.limit)
+    return {"ok": True, "operation": "exec-brief", **result}
 
 
 def resolve_sqlite(sqlite_path: str | None, output_dir: str | None) -> Path:
