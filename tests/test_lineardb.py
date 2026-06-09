@@ -138,8 +138,11 @@ class LinearDBTests(unittest.TestCase):
                                     "email": "daniel@eidosagi.com",
                                     "organization": {"id": "org-1", "name": "Greenmark", "urlKey": "greenmark"},
                                 },
-                                "teams": [{"id": "team-gmw", "key": "GMW", "name": "Greenmark"}],
-                                "team_keys": ["GMW"],
+                                "teams": [
+                                    {"id": "team-gmw", "key": "GMW", "name": "Greenmark"},
+                                    {"id": "team-aic", "key": "AIC", "name": "AIC"},
+                                ],
+                                "team_keys": ["GMW", "AIC"],
                                 "required_team_key": "GMW",
                                 "has_required_team": True,
                             },
@@ -149,13 +152,20 @@ class LinearDBTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertEqual(get_token(account="greenmark"), "Bearer access-token")
                 with sqlite3.connect(db_path) as connection:
-                    token_team = connection.execute(
+                    token_teams = connection.execute(
                         """
                         select account, team_id, team_key, team_name, validated_required
                         from oauth_token_teams
+                        order by team_key
                         """
-                    ).fetchone()
-                self.assertEqual(token_team, ("greenmark", "team-gmw", "GMW", "Greenmark", 1))
+                    ).fetchall()
+                self.assertEqual(
+                    token_teams,
+                    [
+                        ("greenmark", "team-aic", "AIC", "AIC", 0),
+                        ("greenmark", "team-gmw", "GMW", "Greenmark", 1),
+                    ],
+                )
 
     def test_account_mirror_fetches_all_teams_and_issues_without_related(self):
         client = FakeClient(
@@ -235,13 +245,14 @@ class LinearDBTests(unittest.TestCase):
                     join organizations o on o.id = ao.organization_id
                     """
                 ).fetchone()
-                account_team = connection.execute(
+                account_teams = connection.execute(
                     """
                     select at.profile, t.id, t.key
                     from account_teams at
                     join teams t on t.id = at.team_id
+                    order by t.key
                     """
-                ).fetchone()
+                ).fetchall()
                 team_project = connection.execute(
                     """
                     select t.key, p.id, p.name
@@ -251,12 +262,18 @@ class LinearDBTests(unittest.TestCase):
                     """
                 ).fetchone()
 
-        self.assertEqual(issue_count, 2)
-        self.assertEqual(snapshot_count, 2)
+        self.assertEqual(issue_count, 3)
+        self.assertEqual(snapshot_count, 3)
         self.assertEqual(comment_count, 1)
         self.assertEqual(account_profile, "greenmark")
         self.assertEqual(account_org, ("greenmark", "org-gmw", "Greenmark"))
-        self.assertEqual(account_team, ("greenmark", "team-gmw", "GMW"))
+        self.assertEqual(
+            account_teams,
+            [
+                ("greenmark", "team-aic", "AIC"),
+                ("greenmark", "team-gmw", "GMW"),
+            ],
+        )
         self.assertEqual(team_project, ("GMW", "project-1", "Cerebro"))
 
     def test_sqlite_analytics_reads_local_mirror(self):
@@ -327,6 +344,8 @@ def sample_dump() -> dict:
     first["team"] = {"id": "team-gmw", "key": "GMW", "name": "Greenmark"}
     second = issue("issue-2", "GMW-2", "Done", "completed")
     second["team"] = {"id": "team-gmw", "key": "GMW", "name": "Greenmark"}
+    third = issue("issue-3", "AIC-1", "Todo", "unstarted")
+    third["team"] = {"id": "team-aic", "key": "AIC", "name": "AIC"}
     return {
         "query": {"include_related": True},
         "account": {
@@ -339,8 +358,11 @@ def sample_dump() -> dict:
             },
             "organization": {"id": "org-gmw", "name": "Greenmark", "urlKey": "greenmark"},
         },
-        "teams": [{"id": "team-gmw", "key": "GMW", "name": "Greenmark"}],
-        "issues": [first, second],
+        "teams": [
+            {"id": "team-gmw", "key": "GMW", "name": "Greenmark"},
+            {"id": "team-aic", "key": "AIC", "name": "AIC"},
+        ],
+        "issues": [first, second, third],
         "related": {
             "comments": [
                 {

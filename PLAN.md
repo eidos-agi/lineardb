@@ -34,12 +34,15 @@ Accepted account hierarchy:
 - `viewer`: Linear user identity returned by OAuth, expected to be
   `daniel@eidosagi.com` for `greenmark`.
 - `organization`: Linear workspace identity returned by `viewer.organization`.
-- `team`: Linear team such as `GMW`.
+- `team`: any Linear team visible to `daniel@eidosagi.com`; `GMW` is required
+  for Greenmark validation but is not the only expected team.
 - `issue`: Linear task within a team.
 - related issue records: comments, attachments, history, state spans.
 
-Teams are not modeled as user accounts. A local account profile can see one
-Linear organization and multiple teams, depending on the credential.
+Teams are not modeled as user accounts. The core use case is that Daniel's
+single `daniel@eidosagi.com` login can see many teams, and LinearDB must retain
+all of those account-team relationships while still proving that `GMW` is
+available for Greenmark-specific workflows.
 
 ## Done Criteria
 
@@ -49,8 +52,8 @@ V1 is plan-ready when all of these are true:
   without falling back to ambient credentials or personal API keys when no
   Greenmark OAuth installation is present.
 - `bin/lineardb --account greenmark connect` performs a local OAuth callback,
-  validates viewer email `daniel@eidosagi.com`, validates team `GMW`, and then
-  stores the token record locally.
+  validates viewer email `daniel@eidosagi.com`, validates team `GMW`, stores
+  the token record locally, and records all visible teams for that token.
 - `bin/lineardb --account greenmark sync --dry-run` reports the intended local
   SQLite path without calling Linear.
 - `bin/lineardb sync` mirrors teams, issues, snapshots, comments, attachments,
@@ -66,7 +69,8 @@ Implemented:
 - Account-scoped credential resolution with fail-closed explicit accounts.
 - Local OAuth callback flow for installed user accounts.
 - Stored OAuth access/refresh tokens with refresh-token rotation.
-- Default `greenmark` validation for `daniel@eidosagi.com` and `GMW`.
+- Default `greenmark` validation for `daniel@eidosagi.com` and required team
+  `GMW`, while preserving every visible team for that login.
 - Token-safe Linear GraphQL client with retry for transient failures.
 - Account mirror collection across visible teams.
 - Viewer/organization metadata captured in `account_profiles`.

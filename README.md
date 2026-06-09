@@ -54,9 +54,11 @@ bin/lineardb --account greenmark connect
 ```
 
 The default `greenmark` account policy expects the connected Linear viewer to
-be `daniel@eidosagi.com` and to see team `GMW`. Tokens are stored in a local
-SQLite credential store at `~/.lineardb/credentials.sqlite` unless
-`LINEARDB_TOKEN_DB` points somewhere else.
+be `daniel@eidosagi.com`. That login may see many Linear teams; `GMW` is the
+required validation team for Greenmark workflows, not the only team LinearDB
+should store. Tokens are stored in a local SQLite credential store at
+`~/.lineardb/credentials.sqlite` unless `LINEARDB_TOKEN_DB` points somewhere
+else.
 
 Dry-run the Greenmark account guard without calling Linear:
 
@@ -120,10 +122,12 @@ Relationship tables are intentionally explicit:
 
 - `account_organizations` ties a local account profile to the Linear
   organization/workspace returned by OAuth.
-- `account_teams` ties that account profile to visible teams.
+- `account_teams` ties that account profile to every visible team returned by
+  the token.
 - `team_projects` ties teams to projects discovered through issues.
 - The credential store also keeps `oauth_token_teams`, tying an OAuth token
-  account to the teams validated during `connect`.
+  account to every team visible during `connect` and marking the required team
+  such as `GMW`.
 
 ## Analytics
 
