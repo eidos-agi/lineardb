@@ -148,6 +148,14 @@ class LinearDBTests(unittest.TestCase):
                                 code = main(["--account", "greenmark", "connect", "--no-open"])
                 self.assertEqual(code, 0)
                 self.assertEqual(get_token(account="greenmark"), "Bearer access-token")
+                with sqlite3.connect(db_path) as connection:
+                    token_team = connection.execute(
+                        """
+                        select account, team_id, team_key, team_name, validated_required
+                        from oauth_token_teams
+                        """
+                    ).fetchone()
+                self.assertEqual(token_team, ("greenmark", "team-gmw", "GMW", "Greenmark", 1))
 
     def test_account_mirror_fetches_all_teams_and_issues_without_related(self):
         client = FakeClient(
@@ -220,11 +228,36 @@ class LinearDBTests(unittest.TestCase):
                 snapshot_count = connection.execute("select count(*) from issue_snapshots").fetchone()[0]
                 comment_count = connection.execute("select count(*) from comments").fetchone()[0]
                 account_profile = connection.execute("select profile from account_profiles").fetchone()[0]
+                account_org = connection.execute(
+                    """
+                    select ao.profile, o.id, o.name
+                    from account_organizations ao
+                    join organizations o on o.id = ao.organization_id
+                    """
+                ).fetchone()
+                account_team = connection.execute(
+                    """
+                    select at.profile, t.id, t.key
+                    from account_teams at
+                    join teams t on t.id = at.team_id
+                    """
+                ).fetchone()
+                team_project = connection.execute(
+                    """
+                    select t.key, p.id, p.name
+                    from team_projects tp
+                    join teams t on t.id = tp.team_id
+                    join projects p on p.id = tp.project_id
+                    """
+                ).fetchone()
 
         self.assertEqual(issue_count, 2)
         self.assertEqual(snapshot_count, 2)
         self.assertEqual(comment_count, 1)
         self.assertEqual(account_profile, "greenmark")
+        self.assertEqual(account_org, ("greenmark", "org-gmw", "Greenmark"))
+        self.assertEqual(account_team, ("greenmark", "team-gmw", "GMW"))
+        self.assertEqual(team_project, ("GMW", "project-1", "Cerebro"))
 
     def test_sqlite_analytics_reads_local_mirror(self):
         with tempfile.TemporaryDirectory() as temp_dir:

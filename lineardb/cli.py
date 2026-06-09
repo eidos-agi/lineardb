@@ -135,7 +135,7 @@ def handle_connect(args: argparse.Namespace, client: LinearGraphQLClient | None)
         raise LinearDBError(f"Connected Linear viewer email does not match expected email {email}.")
     if not result["has_required_team"]:
         raise LinearDBError(f"Connected Linear viewer cannot see required team {team_key}.")
-    update_token_identity(account, viewer, team_key)
+    update_token_identity(account, viewer, team_key, teams=result.get("teams") or [])
     return {
         "ok": True,
         "operation": "connect",
