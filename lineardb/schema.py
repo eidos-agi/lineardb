@@ -236,6 +236,18 @@ def create_schema(connection: sqlite3.Connection) -> None:
           ended_at text,
           raw_json text not null
         );
+        create table if not exists related_sync_status (
+          issue_id text primary key,
+          issue_identifier text,
+          team_key text,
+          status text not null,
+          attempts integer not null default 0,
+          last_error text,
+          started_at text,
+          finished_at text,
+          updated_at text not null,
+          foreign key (issue_id) references issues(id) on delete cascade
+        );
         """
     )
 
@@ -258,6 +270,7 @@ def clear_current_tables(connection: sqlite3.Connection) -> None:
         "attachments",
         "issue_history",
         "issue_state_spans",
+        "related_sync_status",
     ]:
         connection.execute(f"delete from {table}")
 
@@ -558,3 +571,88 @@ def upsert_related(connection: sqlite3.Connection, related: dict[str, list[dict[
                 json.dumps(span, sort_keys=True),
             ),
         )
+
+
+def clear_issue_related(connection: sqlite3.Connection, issue_id: str) -> None:
+    for table in ["comments", "attachments", "issue_history", "issue_state_spans"]:
+        connection.execute(f"delete from {table} where issue_id = ?", (issue_id,))
+
+
+def mark_related_sync_started(
+    connection: sqlite3.Connection,
+    issue_id: str,
+    issue_identifier: str | None,
+    team_key: str | None,
+) -> None:
+    now = current_timestamp()
+    connection.execute(
+        """
+        insert into related_sync_status(
+          issue_id, issue_identifier, team_key, status, attempts, started_at, updated_at
+        ) values (?, ?, ?, 'running', 1, ?, ?)
+        on conflict(issue_id) do update set
+          issue_identifier = excluded.issue_identifier,
+          team_key = excluded.team_key,
+          status = 'running',
+          attempts = related_sync_status.attempts + 1,
+          last_error = null,
+          started_at = coalesce(related_sync_status.started_at, excluded.started_at),
+          updated_at = excluded.updated_at
+        """,
+        (issue_id, issue_identifier, team_key, now, now),
+    )
+
+
+def mark_related_sync_done(
+    connection: sqlite3.Connection,
+    issue_id: str,
+    issue_identifier: str | None,
+    team_key: str | None,
+) -> None:
+    now = current_timestamp()
+    connection.execute(
+        """
+        insert into related_sync_status(
+          issue_id, issue_identifier, team_key, status, attempts, finished_at, updated_at
+        ) values (?, ?, ?, 'done', 1, ?, ?)
+        on conflict(issue_id) do update set
+          issue_identifier = excluded.issue_identifier,
+          team_key = excluded.team_key,
+          status = 'done',
+          last_error = null,
+          finished_at = excluded.finished_at,
+          updated_at = excluded.updated_at
+        """,
+        (issue_id, issue_identifier, team_key, now, now),
+    )
+
+
+def mark_related_sync_failed(
+    connection: sqlite3.Connection,
+    issue_id: str,
+    issue_identifier: str | None,
+    team_key: str | None,
+    error: str,
+) -> None:
+    now = current_timestamp()
+    connection.execute(
+        """
+        insert into related_sync_status(
+          issue_id, issue_identifier, team_key, status, attempts, last_error, updated_at
+        ) values (?, ?, ?, 'failed', 1, ?, ?)
+        on conflict(issue_id) do update set
+          issue_identifier = excluded.issue_identifier,
+          team_key = excluded.team_key,
+          status = 'failed',
+          last_error = excluded.last_error,
+          updated_at = excluded.updated_at
+        """,
+        (issue_id, issue_identifier, team_key, error, now),
+    )
+
+
+def related_sync_summary(connection: sqlite3.Connection) -> dict[str, int]:
+    rows = connection.execute(
+        "select status, count(*) from related_sync_status group by status order by status"
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}

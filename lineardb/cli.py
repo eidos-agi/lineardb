@@ -29,6 +29,7 @@ from .auth import (
 )
 from .graphql import LinearGraphQLError, LinearGraphQLClient
 from .mirror import account_mirror_dump, auth_check
+from .related_sync import sync_related_sqlite
 from .schema import write_mirror_sqlite
 
 
@@ -91,6 +92,17 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--sample-size", type=int, default=20)
     sync.add_argument("--skip-related", action="store_true")
     sync.set_defaults(handler=handle_sync)
+
+    related = subparsers.add_parser("sync-related", help="Resume related-data sync against an existing SQLite mirror.")
+    related.add_argument("--dry-run", action="store_true", help="Print the intended related-data operation without calling Linear.")
+    related.add_argument("--sqlite", required=True, help="Existing SQLite mirror path.")
+    related.add_argument("--team-key", help="Optional team key filter such as GMW.")
+    related.add_argument("--related-page-size", type=int, default=100)
+    related.add_argument("--limit", type=int, help="Maximum number of issues to process this run.")
+    related.add_argument("--retry-failed", action="store_true", help="Retry issues marked failed.")
+    related.add_argument("--force", action="store_true", help="Re-fetch related data even for completed issues.")
+    related.add_argument("--progress", action="store_true", help="Print one progress JSON line per issue to stderr.")
+    related.set_defaults(handler=handle_sync_related)
 
     analytics = subparsers.add_parser("analytics", help="Analyze an existing LinearDB SQLite mirror.")
     analytics.add_argument("--sqlite", required=True, help="SQLite mirror path.")
@@ -198,6 +210,36 @@ def handle_sync(args: argparse.Namespace, client: LinearGraphQLClient | None) ->
         "related_counts": {key: len(value) for key, value in dump.get("related", {}).items()},
         "analytics": dump["analytics"],
     }
+
+
+def handle_sync_related(args: argparse.Namespace, client: LinearGraphQLClient | None) -> dict[str, Any]:
+    sqlite_path = Path(args.sqlite).expanduser().resolve()
+    if args.dry_run:
+        return {
+            "ok": True,
+            "operation": "sync-related",
+            "dry_run": True,
+            "account": args.account,
+            "sqlite": str(sqlite_path),
+            "team_key": args.team_key,
+            "limit": args.limit,
+            "retry_failed": args.retry_failed,
+            "force": args.force,
+            "read_only": True,
+        }
+    if client is None:
+        raise LinearDBError("Linear client is required for live related-data sync.")
+    result = sync_related_sqlite(
+        client,
+        sqlite_path,
+        team_key=args.team_key,
+        page_size=args.related_page_size,
+        limit=args.limit,
+        retry_failed=args.retry_failed,
+        force=args.force,
+        progress=args.progress,
+    )
+    return {"ok": result["failed"] == 0, "operation": "sync-related", "account": args.account, **result}
 
 
 def handle_analytics(args: argparse.Namespace, client: LinearGraphQLClient | None) -> dict[str, Any]:

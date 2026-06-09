@@ -7,6 +7,8 @@
 - Added local SQLite credential storage with access-token refresh support.
 - Added explicit relationship tables for OAuth-token teams, account
   organizations, account teams, and team projects.
+- Added resumable `sync-related` for comments, attachments, issue history, and
+  state spans with per-issue progress in SQLite.
 - Added account-scoped OAuth resolution with fail-closed explicit accounts.
 - Made `greenmark` default to viewer `daniel@eidosagi.com` and team `GMW`.
 - Added read-only Linear GraphQL mirror sync into SQLite.
