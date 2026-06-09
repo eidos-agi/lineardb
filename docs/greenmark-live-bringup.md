@@ -24,6 +24,17 @@ export LINEARDB_GREENMARK_OAUTH_CLIENT_ID=<client-id>
 export LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET=<client-secret>
 ```
 
+On macOS, LinearDB can also read the app credentials from Keychain when the
+environment variables are absent. The expected Keychain items are:
+
+```text
+service: lineardb.greenmark.oauth.client_id
+account: LINEARDB_GREENMARK_OAUTH_CLIENT_ID
+
+service: lineardb.greenmark.oauth.client_secret
+account: LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET
+```
+
 Prove only presence:
 
 ```bash

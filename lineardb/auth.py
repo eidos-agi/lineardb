@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import sqlite3
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -52,7 +53,9 @@ def resolved_account(account: str | None = None) -> str:
 
 def oauth_client_id(account: str | None) -> str:
     account_name = resolved_account(account)
-    client_id = account_env_value(account_name, "OAUTH_CLIENT_ID")
+    client_id = account_env_value(account_name, "OAUTH_CLIENT_ID") or keychain_secret(
+        account_name, "OAUTH_CLIENT_ID"
+    )
     if not client_id:
         key = account_env_key(account_name)
         raise MissingCredentialError(f"Set LINEARDB_{key}_OAUTH_CLIENT_ID for LinearDB OAuth.")
@@ -61,7 +64,9 @@ def oauth_client_id(account: str | None) -> str:
 
 def oauth_client_secret(account: str | None) -> str:
     account_name = resolved_account(account)
-    client_secret = account_env_value(account_name, "OAUTH_CLIENT_SECRET")
+    client_secret = account_env_value(account_name, "OAUTH_CLIENT_SECRET") or keychain_secret(
+        account_name, "OAUTH_CLIENT_SECRET"
+    )
     if not client_secret:
         key = account_env_key(account_name)
         raise MissingCredentialError(f"Set LINEARDB_{key}_OAUTH_CLIENT_SECRET for LinearDB OAuth.")
@@ -91,6 +96,36 @@ def token_store_path() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return Path.home() / ".lineardb" / "credentials.sqlite"
+
+
+def keychain_service(account: str, suffix: str) -> str:
+    key = suffix.lower().removeprefix("oauth_")
+    return f"lineardb.{account_env_key(account).lower()}.oauth.{key}"
+
+
+def keychain_secret(account: str, suffix: str) -> str | None:
+    account_name = f"LINEARDB_{account_env_key(account)}_{suffix}"
+    try:
+        result = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-a",
+                account_name,
+                "-s",
+                keychain_service(account, suffix),
+                "-w",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    value = result.stdout.strip()
+    return value or None
 
 
 def get_token(account: str | None = None, api_key_env: str | None = None) -> str:

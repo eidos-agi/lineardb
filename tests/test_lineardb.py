@@ -15,6 +15,8 @@ from lineardb.auth import (
     default_team_key,
     expected_email,
     get_token,
+    oauth_client_id,
+    oauth_client_secret,
     save_token_response,
 )
 from lineardb.cli import main
@@ -34,9 +36,15 @@ class FakeClient:
 
 class LinearDBTests(unittest.TestCase):
     def test_account_profile_does_not_use_api_keys(self):
-        with patch.dict(os.environ, {"LINEARDB_GREENMARK_LINEAR_API_KEY": "wrong-profile"}, clear=True):
-            with self.assertRaises(MissingCredentialError):
-                get_token(account="greenmark")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "credentials.sqlite"
+            env = {
+                "LINEARDB_TOKEN_DB": str(db_path),
+                "LINEARDB_GREENMARK_LINEAR_API_KEY": "wrong-profile",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                with self.assertRaises(MissingCredentialError):
+                    get_token(account="greenmark")
 
     def test_account_profile_uses_stored_oauth_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -88,6 +96,34 @@ class LinearDBTests(unittest.TestCase):
         self.assertIn("actor=user", url)
         self.assertIn("prompt=consent", url)
         self.assertEqual(state, "state-1")
+
+    def test_oauth_app_credentials_can_resolve_from_keychain(self):
+        def fake_run(command, text=True, capture_output=True, check=False):
+            self.assertEqual(text, True)
+            self.assertEqual(capture_output, True)
+            self.assertEqual(check, False)
+            service = command[command.index("-s") + 1]
+            if service.endswith("client_id"):
+                return type("Result", (), {"returncode": 0, "stdout": "client-id\n"})()
+            if service.endswith("client_secret"):
+                return type("Result", (), {"returncode": 0, "stdout": "client-secret\n"})()
+            return type("Result", (), {"returncode": 1, "stdout": ""})()
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("lineardb.auth.subprocess.run", side_effect=fake_run):
+                self.assertEqual(oauth_client_id("greenmark"), "client-id")
+                self.assertEqual(oauth_client_secret("greenmark"), "client-secret")
+
+    def test_oauth_env_credentials_override_keychain(self):
+        env = {
+            "LINEARDB_GREENMARK_OAUTH_CLIENT_ID": "env-client-id",
+            "LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET": "env-client-secret",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with patch("lineardb.auth.subprocess.run") as run:
+                self.assertEqual(oauth_client_id("greenmark"), "env-client-id")
+                self.assertEqual(oauth_client_secret("greenmark"), "env-client-secret")
+        run.assert_not_called()
 
     def test_auth_check_dry_run_is_token_safe(self):
         with patch.dict(os.environ, {}, clear=True):
