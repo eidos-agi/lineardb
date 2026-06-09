@@ -85,6 +85,19 @@ bin/lineardb --account greenmark sync \
 Use `--skip-related` only for a fast current-state refresh. The full mirror
 includes comments, attachments, issue history, and state spans.
 
+Resume related-data sync into an existing mirror:
+
+```bash
+bin/lineardb --account greenmark sync-related \
+  --sqlite outputs/greenmark-linear.sqlite \
+  --team-key GMW \
+  --limit 25 \
+  --progress
+```
+
+`sync-related` records per-issue progress in `related_sync_status`, skips
+completed issues by default, and can be resumed after interruption.
+
 Analyze an existing mirror without calling Linear:
 
 ```bash
@@ -117,6 +130,7 @@ Time-series and related-data tables:
 - `attachments`
 - `issue_history`
 - `issue_state_spans`
+- `related_sync_status`
 
 Every object table keeps `raw_json` so the mirror can preserve Linear fields
 before every field has a first-class column.

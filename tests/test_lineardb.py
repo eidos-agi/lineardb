@@ -21,6 +21,7 @@ from lineardb.auth import (
 )
 from lineardb.cli import main
 from lineardb.mirror import account_mirror_dump
+from lineardb.related_sync import sync_related_sqlite
 from lineardb.schema import write_mirror_sqlite
 
 
@@ -359,6 +360,57 @@ class LinearDBTests(unittest.TestCase):
 
         self.assertEqual(comment_count, 0)
 
+    def test_sync_related_resumes_from_existing_sqlite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "linear.sqlite"
+            write_mirror_sqlite(sample_dump(), db_path)
+            client = FakeClient(
+                [
+                    related_response("comments", [{"id": "comment-1", "body": "One"}]),
+                    related_response("attachments", [{"id": "attachment-1", "title": "File One"}]),
+                    related_response("history", [{"id": "history-1", "actor": {"id": "actor-1", "name": "Daniel"}}]),
+                    related_response("stateHistory", [{"id": "span-1", "state": {"id": "state-1", "name": "Todo", "type": "unstarted"}}]),
+                    related_response("comments", [{"id": "comment-2", "body": "Two"}]),
+                    related_response("attachments", [{"id": "attachment-2", "title": "File Two"}]),
+                    related_response("history", [{"id": "history-2", "actor": {"id": "actor-2", "name": "Daniel"}}]),
+                    related_response("stateHistory", [{"id": "span-2", "state": {"id": "state-2", "name": "Done", "type": "completed"}}]),
+                ]
+            )
+
+            first = sync_related_sqlite(client, db_path, team_key="GMW", limit=1)
+            second = sync_related_sqlite(client, db_path, team_key="GMW", limit=1)
+
+            with sqlite3.connect(db_path) as connection:
+                comments = connection.execute(
+                    "select issue_identifier, body from comments order by issue_identifier"
+                ).fetchall()
+                statuses = connection.execute(
+                    "select issue_identifier, status from related_sync_status where team_key = 'GMW' order by issue_identifier"
+                ).fetchall()
+                attachments = connection.execute("select count(*) from attachments").fetchone()[0]
+                history = connection.execute("select count(*) from issue_history").fetchone()[0]
+                spans = connection.execute("select count(*) from issue_state_spans").fetchone()[0]
+
+        self.assertEqual(first["processed"], 1)
+        self.assertEqual(first["succeeded"], 1)
+        self.assertEqual(second["processed"], 1)
+        self.assertEqual(second["succeeded"], 1)
+        self.assertEqual(comments, [("GMW-1", "One"), ("GMW-2", "Two")])
+        self.assertEqual(statuses, [("GMW-1", "done"), ("GMW-2", "done")])
+        self.assertEqual(attachments, 2)
+        self.assertEqual(history, 2)
+        self.assertEqual(spans, 2)
+
+    def test_sync_related_cli_dry_run_is_token_safe(self):
+        with patch("sys.stdout") as stdout:
+            code = main(["--account", "greenmark", "sync-related", "--dry-run", "--sqlite", "mirror.sqlite", "--team-key", "GMW"])
+
+        output = "".join(call.args[0] for call in stdout.write.call_args_list)
+        data = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(data["operation"], "sync-related")
+        self.assertEqual(data["team_key"], "GMW")
+
 
 def issue(issue_id: str, identifier: str, state_name: str, state_type: str) -> dict:
     return {
@@ -372,6 +424,17 @@ def issue(issue_id: str, identifier: str, state_name: str, state_type: str) -> d
         "assignee": None,
         "project": {"id": "project-1", "name": "Cerebro"},
         "labels": {"nodes": [{"id": "label-1", "name": "Paylocity"}]} if identifier == "GMW-1" else {"nodes": []},
+    }
+
+
+def related_response(connection_name: str, nodes: list[dict]) -> dict:
+    return {
+        "issue": {
+            connection_name: {
+                "nodes": nodes,
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }
+        }
     }
 
 

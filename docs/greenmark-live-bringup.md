@@ -114,13 +114,38 @@ sqlite3 outputs/greenmark-linear.sqlite \
   "select t.key, p.name from team_projects tp join teams t on t.id = tp.team_id join projects p on p.id = tp.project_id order by t.key, p.name;"
 ```
 
-## 4. Full Sync
+## 4. Resumable Related-Data Sync
 
-Run the full related-data sync:
+Start with a bounded Greenmark related-data batch:
 
 ```bash
-bin/lineardb --account greenmark sync \
-  --sqlite outputs/greenmark-linear.sqlite
+bin/lineardb --account greenmark sync-related \
+  --sqlite outputs/greenmark-linear.sqlite \
+  --team-key GMW \
+  --limit 25 \
+  --progress
+```
+
+Resume the next batch with the same command. Completed issues are skipped by
+default.
+
+Run all remaining GMW related data:
+
+```bash
+bin/lineardb --account greenmark sync-related \
+  --sqlite outputs/greenmark-linear.sqlite \
+  --team-key GMW \
+  --progress
+```
+
+Retry failed issues:
+
+```bash
+bin/lineardb --account greenmark sync-related \
+  --sqlite outputs/greenmark-linear.sqlite \
+  --team-key GMW \
+  --retry-failed \
+  --progress
 ```
 
 Check related tables:
@@ -131,8 +156,16 @@ select 'comments', count(*) from comments
 union all select 'attachments', count(*) from attachments
 union all select 'issue_history', count(*) from issue_history
 union all select 'issue_state_spans', count(*) from issue_state_spans
+union all select 'related_sync_status', count(*) from related_sync_status
 union all select 'sync_runs', count(*) from sync_runs
 union all select 'issue_snapshots', count(*) from issue_snapshots;"
+```
+
+Check progress:
+
+```bash
+sqlite3 outputs/greenmark-linear.sqlite \
+  "select status, count(*) from related_sync_status group by status order by status;"
 ```
 
 ## 5. Analytics

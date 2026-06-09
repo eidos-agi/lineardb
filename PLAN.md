@@ -156,28 +156,34 @@ Exit criteria:
   one team.
 - `GMW` issues are present and filterable.
 
-### Stage 4: Full Related-Data Sync
+### Stage 4: Resumable Related-Data Sync
 
 Goal: collect the full task context needed for analytics and time-series work.
 
-- Run:
+- Start with a bounded related-data batch:
 
   ```bash
-  bin/lineardb --account greenmark sync \
-    --sqlite outputs/greenmark-linear.sqlite
+  bin/lineardb --account greenmark sync-related \
+    --sqlite outputs/greenmark-linear.sqlite \
+    --team-key GMW \
+    --limit 25 \
+    --progress
   ```
 
+- Resume by re-running the same command. Completed issues are skipped by
+  default.
+- Run without `--limit` when the bounded batches are healthy.
+- Use `--retry-failed` to revisit failed issues.
 - Validate row counts for `comments`, `attachments`, `issue_history`, and
   `issue_state_spans`.
-- Confirm `sync_runs` and `issue_snapshots` record the run.
-- Re-run sync once to confirm time-series snapshots append by run id while
-  current-state tables refresh.
+- Confirm `related_sync_status` records `done`, `failed`, and in-progress
+  state per issue.
 
 Exit criteria:
 
-- Full sync completes without replacing a previous good database on failure.
 - Related tables are populated when Linear returns related records.
-- `issue_snapshots` has at least one run per completed sync.
+- Interrupted related syncs can resume without re-fetching completed issues.
+- Failed issues are visible and can be retried.
 
 ### Stage 5: Analytics Proof
 
@@ -209,6 +215,7 @@ Goal: turn the proof into a durable local product surface.
 
 - Add a `relationships` or `inspect` CLI command that prints non-secret account,
   organization, team, project, and token-team relationships.
+- Add account-level related sync scheduling after the GMW path is proven.
 - Add regression tests for many-team sync from one account profile.
 - Add docs for common SQL joins over `account_teams`, `team_projects`, and
   `issue_snapshots`.
