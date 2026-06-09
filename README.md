@@ -7,7 +7,7 @@ It is not a Linear UI clone. It is a data-model mirror with analytics features:
 Linear data is copied onto this machine, stored as queryable SQLite tables, and
 then analyzed locally.
 
-- OAuth app/service-account authentication.
+- OAuth app authentication for installed Linear user accounts.
 - Workspace and team visibility validation.
 - Local SQLite/DuckDB-ready sync.
 - Current-state issue tables.
@@ -43,6 +43,20 @@ LinearPlus-specific workflows on top:
 - Greenmark/account dump CLI routing
 
 ## CLI Shape
+
+Connect the first Greenmark profile for Daniel's Eidos login:
+
+```bash
+export LINEARDB_GREENMARK_OAUTH_CLIENT_ID=<client-id>
+export LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET=<client-secret>
+
+bin/lineardb --account greenmark connect
+```
+
+The default `greenmark` account policy expects the connected Linear viewer to
+be `daniel@eidosagi.com` and to see team `GMW`. Tokens are stored in a local
+SQLite credential store at `~/.lineardb/credentials.sqlite` unless
+`LINEARDB_TOKEN_DB` points somewhere else.
 
 Dry-run the Greenmark account guard without calling Linear:
 
@@ -132,7 +146,15 @@ ready.
 
 ## Preferred Auth Shape
 
-Use Linear OAuth client credentials for recurring LinearDB sync:
+LinearDB is OAuth-only. For the first version, create one LinearDB OAuth app and
+connect the `greenmark` profile with Daniel's `daniel@eidosagi.com` Linear
+login. The OAuth app must include this local callback URL:
+
+```text
+http://localhost:8721/oauth/callback
+```
+
+Set the app credentials in the shell or local secret manager before connecting:
 
 ```bash
 LINEARDB_GREENMARK_OAUTH_CLIENT_ID
@@ -140,9 +162,7 @@ LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET
 LINEARDB_GREENMARK_OAUTH_SCOPE=read
 ```
 
-Personal API keys are fallback only. They are too easy to bind to the wrong
-workspace login.
-
 Explicit account profiles fail closed. `--account greenmark` uses only
-`LINEARDB_GREENMARK_*` credentials and must not fall back to ambient Linear
-credentials.
+the stored OAuth installation and account-scoped `LINEARDB_GREENMARK_*` OAuth
+app settings. It must not fall back to ambient Linear credentials or personal
+API keys.

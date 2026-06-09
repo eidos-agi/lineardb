@@ -9,7 +9,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lineardb.analytics import sqlite_analytics
-from lineardb.auth import MissingCredentialError, get_token
+from lineardb.auth import (
+    MissingCredentialError,
+    authorization_url,
+    default_team_key,
+    expected_email,
+    get_token,
+    save_token_response,
+)
 from lineardb.cli import main
 from lineardb.mirror import account_mirror_dump
 from lineardb.schema import write_mirror_sqlite
@@ -26,14 +33,61 @@ class FakeClient:
 
 
 class LinearDBTests(unittest.TestCase):
-    def test_account_profile_does_not_fall_back_to_ambient_key(self):
-        with patch.dict(os.environ, {"LINEARPLUS_LINEAR_API_KEY": "wrong-profile"}, clear=True):
+    def test_account_profile_does_not_use_api_keys(self):
+        with patch.dict(os.environ, {"LINEARDB_GREENMARK_LINEAR_API_KEY": "wrong-profile"}, clear=True):
             with self.assertRaises(MissingCredentialError):
                 get_token(account="greenmark")
 
-    def test_account_profile_uses_scoped_key(self):
-        with patch.dict(os.environ, {"LINEARDB_GREENMARK_LINEAR_API_KEY": "greenmark-key"}, clear=True):
-            self.assertEqual(get_token(account="greenmark"), "greenmark-key")
+    def test_account_profile_uses_stored_oauth_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "credentials.sqlite"
+            with patch.dict(os.environ, {"LINEARDB_TOKEN_DB": str(db_path)}, clear=True):
+                save_token_response(
+                    "greenmark",
+                    {"access_token": "access-token", "refresh_token": "refresh-token", "expires_in": 3600},
+                )
+                self.assertEqual(get_token(account="greenmark"), "Bearer access-token")
+
+    def test_expired_token_refreshes_and_rotates_refresh_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "credentials.sqlite"
+            env = {
+                "LINEARDB_TOKEN_DB": str(db_path),
+                "LINEARDB_GREENMARK_OAUTH_CLIENT_ID": "client-id",
+                "LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET": "client-secret",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                save_token_response(
+                    "greenmark",
+                    {"access_token": "old-access", "refresh_token": "old-refresh", "expires_in": -10},
+                )
+                with patch(
+                    "lineardb.auth.refresh_access_token",
+                    return_value={
+                        "access_token": "new-access",
+                        "refresh_token": "new-refresh",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                        "scope": "read",
+                    },
+                ):
+                    self.assertEqual(get_token(account="greenmark"), "Bearer new-access")
+                self.assertEqual(get_token(account="greenmark"), "Bearer new-access")
+
+    def test_greenmark_defaults_are_daniel_eidosagi_and_gmw(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(expected_email("greenmark"), "daniel@eidosagi.com")
+            self.assertEqual(default_team_key("greenmark"), "GMW")
+
+    def test_authorization_url_uses_account_oauth_app_and_read_scope(self):
+        env = {"LINEARDB_GREENMARK_OAUTH_CLIENT_ID": "client-id"}
+        with patch.dict(os.environ, env, clear=True):
+            url, state = authorization_url("greenmark", state="state-1")
+        self.assertIn("client_id=client-id", url)
+        self.assertIn("scope=read", url)
+        self.assertIn("actor=user", url)
+        self.assertIn("prompt=consent", url)
+        self.assertEqual(state, "state-1")
 
     def test_auth_check_dry_run_is_token_safe(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -42,7 +96,58 @@ class LinearDBTests(unittest.TestCase):
         output = "".join(call.args[0] for call in stdout.write.call_args_list)
         self.assertEqual(code, 0)
         self.assertIn('"operation": "auth-check"', output)
-        self.assertNotIn("LINEARDB_GREENMARK_LINEAR_API_KEY", output)
+        self.assertNotIn("access-token", output)
+
+    def test_connect_dry_run_reports_oauth_shape(self):
+        env = {"LINEARDB_GREENMARK_OAUTH_CLIENT_ID": "client-id"}
+        with patch.dict(os.environ, env, clear=True):
+            with patch("sys.stdout") as stdout:
+                code = main(["--account", "greenmark", "connect", "--dry-run"])
+        output = "".join(call.args[0] for call in stdout.write.call_args_list)
+        data = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(data["operation"], "connect")
+        self.assertEqual(data["expected_email"], "daniel@eidosagi.com")
+        self.assertEqual(data["required_team_key"], "GMW")
+        self.assertIn("linear.app/oauth/authorize", data["authorize_url"])
+
+    def test_connect_saves_token_after_email_and_team_validation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "credentials.sqlite"
+            env = {
+                "LINEARDB_TOKEN_DB": str(db_path),
+                "LINEARDB_GREENMARK_OAUTH_CLIENT_ID": "client-id",
+                "LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET": "client-secret",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                with patch("lineardb.cli.wait_for_oauth_callback", return_value={"code": "code-1"}):
+                    with patch(
+                        "lineardb.cli.exchange_authorization_code",
+                        return_value={
+                            "access_token": "access-token",
+                            "refresh_token": "refresh-token",
+                            "expires_in": 3600,
+                        },
+                    ):
+                        with patch(
+                            "lineardb.cli.auth_check",
+                            return_value={
+                                "viewer": {
+                                    "id": "viewer-1",
+                                    "name": "Daniel",
+                                    "email": "daniel@eidosagi.com",
+                                    "organization": {"id": "org-1", "name": "Greenmark", "urlKey": "greenmark"},
+                                },
+                                "teams": [{"id": "team-gmw", "key": "GMW", "name": "Greenmark"}],
+                                "team_keys": ["GMW"],
+                                "required_team_key": "GMW",
+                                "has_required_team": True,
+                            },
+                        ):
+                            with patch("sys.stdout"):
+                                code = main(["--account", "greenmark", "connect", "--no-open"])
+                self.assertEqual(code, 0)
+                self.assertEqual(get_token(account="greenmark"), "Bearer access-token")
 
     def test_account_mirror_fetches_all_teams_and_issues_without_related(self):
         client = FakeClient(
