@@ -106,6 +106,19 @@ bin/lineardb analytics \
   --team-key GMW
 ```
 
+Generate a one-screen CEO/CFO blocker brief without calling Linear:
+
+```bash
+bin/lineardb exec-brief \
+  --sqlite outputs/greenmark-linear.sqlite \
+  --team-key GMW \
+  --output outputs/gmw-exec-brief.html
+```
+
+The brief highlights open high-priority work, approval/blocker labels, stale
+items, unassigned work, finance/compliance/security labels, a ranked decision
+queue, project risk, and aging buckets.
+
 ## SQLite Tables
 
 Current-state tables:
@@ -155,6 +168,9 @@ Relationship tables are intentionally explicit:
 - stale open issue samples
 - snapshot run history
 - state trends from `issue_snapshots`
+
+`lineardb exec-brief` also reads only the local SQLite mirror. It renders a
+self-contained HTML report for executive blocker review.
 
 ## Verification
 

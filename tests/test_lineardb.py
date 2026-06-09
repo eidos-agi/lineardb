@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +21,7 @@ from lineardb.auth import (
     save_token_response,
 )
 from lineardb.cli import main
+from lineardb.exec_brief import build_exec_brief
 from lineardb.mirror import account_mirror_dump
 from lineardb.related_sync import sync_related_sqlite
 from lineardb.schema import write_mirror_sqlite
@@ -410,6 +412,40 @@ class LinearDBTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(data["operation"], "sync-related")
         self.assertEqual(data["team_key"], "GMW")
+
+    def test_exec_brief_ranks_executive_blockers_from_sqlite(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "linear.sqlite"
+            dump = sample_dump()
+            dump["issues"][0]["labels"]["nodes"].append({"id": "label-2", "name": "Approval Gate"})
+            write_mirror_sqlite(dump, db_path)
+
+            report = build_exec_brief(
+                db_path,
+                team_key="GMW",
+                limit=5,
+                now=datetime(2026, 6, 20, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(report["metrics"]["issues"], 2)
+        self.assertEqual(report["metrics"]["blocked_or_approval"], 1)
+        self.assertEqual(report["decision_queue"][0]["identifier"], "GMW-1")
+        self.assertIn("Approval Gate", report["decision_queue"][0]["reason"])
+
+    def test_exec_brief_cli_writes_html_without_linear_credentials(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "linear.sqlite"
+            output_path = Path(temp_dir) / "brief.html"
+            write_mirror_sqlite(sample_dump(), db_path)
+            with patch.dict(os.environ, {}, clear=True), patch("sys.stdout") as stdout:
+                code = main(["exec-brief", "--sqlite", str(db_path), "--team-key", "GMW", "--output", str(output_path)])
+            self.assertTrue(output_path.exists())
+            self.assertIn("CEO/CFO Blocker Brief", output_path.read_text())
+
+        output = "".join(call.args[0] for call in stdout.write.call_args_list)
+        data = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(data["operation"], "exec-brief")
 
 
 def issue(issue_id: str, identifier: str, state_name: str, state_type: str) -> dict:
