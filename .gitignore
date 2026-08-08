@@ -10,3 +10,4 @@ credentials*
 outputs/
 *.sqlite
 *.sqlite-*
+.shipr/
