@@ -17,8 +17,22 @@ LINEAR_OAUTH_TOKEN_URL = "https://api.linear.app/oauth/token"
 DEFAULT_ACCOUNT_ENV = "LINEARDB_ACCOUNT"
 DEFAULT_OAUTH_SCOPE = "read"
 DEFAULT_REDIRECT_URI = "http://localhost:8721/oauth/callback"
-DEFAULT_EXPECTED_EMAIL_BY_ACCOUNT = {"greenmark": "daniel@eidosagi.com"}
-DEFAULT_TEAM_KEY_BY_ACCOUNT = {"greenmark": "GMW"}
+DEFAULT_EXPECTED_EMAIL_BY_ACCOUNT = {
+    "greenmark": "daniel@eidosagi.com",
+    "eidos": "daniel@eidosagi.com",
+    "aic": "daniel@eidosagi.com",
+}
+DEFAULT_TEAM_KEY_BY_ACCOUNT = {
+    "greenmark": "GMW",
+    "eidos": "EID",
+    "aic": "AIC",
+}
+DEFAULT_TOKEN_ALIAS_BY_ACCOUNT = {
+    "eidos": "greenmark",
+    "aic": "greenmark",
+    "se": "greenmark",
+}
+SHARED_OAUTH_ACCOUNT = "greenmark"
 TOKEN_REFRESH_MARGIN_SECONDS = 300
 
 
@@ -44,6 +58,19 @@ def account_env_value(account: str | None, suffix: str) -> str | None:
     return os.environ.get(f"LINEARDB_{account_env_key(account)}_{suffix}")
 
 
+def shared_oauth_env_value(suffix: str) -> str | None:
+    return os.environ.get(f"LINEARDB_{suffix}") or os.environ.get(f"LINEARDB_OAUTH_{suffix}")
+
+
+def token_storage_account(account_name: str) -> str:
+    if load_token_record(account_name):
+        return account_name
+    alias = os.environ.get("LINEARDB_TOKEN_ALIAS") or DEFAULT_TOKEN_ALIAS_BY_ACCOUNT.get(account_name)
+    if alias and load_token_record(alias):
+        return alias
+    return account_name
+
+
 def resolved_account(account: str | None = None) -> str:
     account_name = account or os.environ.get(DEFAULT_ACCOUNT_ENV)
     if not account_name:
@@ -53,23 +80,33 @@ def resolved_account(account: str | None = None) -> str:
 
 def oauth_client_id(account: str | None) -> str:
     account_name = resolved_account(account)
-    client_id = account_env_value(account_name, "OAUTH_CLIENT_ID") or keychain_secret(
-        account_name, "OAUTH_CLIENT_ID"
+    client_id = (
+        account_env_value(account_name, "OAUTH_CLIENT_ID")
+        or keychain_secret(account_name, "OAUTH_CLIENT_ID")
+        or shared_oauth_env_value("OAUTH_CLIENT_ID")
+        or keychain_secret(SHARED_OAUTH_ACCOUNT, "OAUTH_CLIENT_ID")
     )
     if not client_id:
         key = account_env_key(account_name)
-        raise MissingCredentialError(f"Set LINEARDB_{key}_OAUTH_CLIENT_ID for LinearDB OAuth.")
+        raise MissingCredentialError(
+            f"Set LINEARDB_{key}_OAUTH_CLIENT_ID, LINEARDB_OAUTH_CLIENT_ID, or Keychain for LinearDB OAuth."
+        )
     return client_id
 
 
 def oauth_client_secret(account: str | None) -> str:
     account_name = resolved_account(account)
-    client_secret = account_env_value(account_name, "OAUTH_CLIENT_SECRET") or keychain_secret(
-        account_name, "OAUTH_CLIENT_SECRET"
+    client_secret = (
+        account_env_value(account_name, "OAUTH_CLIENT_SECRET")
+        or keychain_secret(account_name, "OAUTH_CLIENT_SECRET")
+        or shared_oauth_env_value("OAUTH_CLIENT_SECRET")
+        or keychain_secret(SHARED_OAUTH_ACCOUNT, "OAUTH_CLIENT_SECRET")
     )
     if not client_secret:
         key = account_env_key(account_name)
-        raise MissingCredentialError(f"Set LINEARDB_{key}_OAUTH_CLIENT_SECRET for LinearDB OAuth.")
+        raise MissingCredentialError(
+            f"Set LINEARDB_{key}_OAUTH_CLIENT_SECRET, LINEARDB_OAUTH_CLIENT_SECRET, or Keychain for LinearDB OAuth."
+        )
     return client_secret
 
 
@@ -131,10 +168,11 @@ def keychain_secret(account: str, suffix: str) -> str | None:
 def get_token(account: str | None = None, api_key_env: str | None = None) -> str:
     del api_key_env
     account_name = resolved_account(account)
-    record = load_token_record(account_name)
+    storage_account = token_storage_account(account_name)
+    record = load_token_record(storage_account)
     if not record:
         raise MissingCredentialError(
-            f"Run `lineardb --account {account_name} connect` first. "
+            f"Run `lineardb --account {storage_account} connect` first. "
             "LinearDB is OAuth-only and will not use personal API keys."
         )
 
@@ -148,12 +186,12 @@ def get_token(account: str | None = None, api_key_env: str | None = None) -> str
         raise MissingCredentialError(f"Reconnect account {account_name}; no Linear OAuth refresh token is stored.")
 
     response = refresh_access_token(
-        account=account_name,
+        account=storage_account,
         refresh_token=refresh_token,
         client_id=oauth_client_id(account_name),
         client_secret=oauth_client_secret(account_name),
     )
-    saved = save_token_response(account_name, response, merge_existing=record)
+    saved = save_token_response(storage_account, response, merge_existing=record)
     return bearer_header(saved)
 
 

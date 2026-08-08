@@ -7,7 +7,59 @@ Greenmark workflows, not the only team LinearDB should store.
 Do not paste OAuth client secrets, access tokens, or refresh tokens into chat,
 issues, commits, or docs.
 
-## 1. OAuth App
+## 1. OAuth App Modes
+
+LinearDB currently has two Greenmark-ready OAuth shapes:
+
+1. Local installed-user connect for Daniel's `daniel@eidosagi.com` login.
+2. Hosted client-credentials for Cerebro and data-daemon services.
+
+Use the hosted path when the goal is Railway-backed service access. Use the
+installed-user path when the goal is a local `lineardb connect` profile.
+
+## 1a. Hosted Client-Credentials App
+
+Current hosted app shape:
+
+```text
+Workspace: eidos-agi
+App name: TaskDB Hosted
+Callback URL: http://localhost:8721/oauth/callback
+Scope: read
+Availability: Private to this workspace
+Grant used by hosted services: client_credentials
+Required validation team: GMW
+```
+
+Hosted Greenmark services consume these Railway environment variables:
+
+```text
+CEREBRO_LINEAR_OAUTH_CLIENT_ID
+CEREBRO_LINEAR_OAUTH_CLIENT_SECRET
+CEREBRO_LINEAR_TEAM_KEY=GMW
+```
+
+Current service targets:
+
+- `cerebro`
+- `cerebro-qa`
+- `data-daemon-v5`
+
+Do not record the secret in repo files. Prove the hosted credential with:
+
+```bash
+linearplus --account greenmark auth-check --team-key GMW
+```
+
+Expected hosted proof:
+
+- `ok` is true.
+- `has_required_team` is true for `GMW`.
+- `viewer.organization.urlKey` is `eidos-agi`.
+- `viewer.email` is an `@oauthapp.linear.app` identity for the app, not
+  Daniel's mailbox.
+
+## 1b. Installed-User OAuth App
 
 Configure the LinearDB OAuth app with:
 
@@ -42,7 +94,7 @@ test -n "$LINEARDB_GREENMARK_OAUTH_CLIENT_ID"
 test -n "$LINEARDB_GREENMARK_OAUTH_CLIENT_SECRET"
 ```
 
-## 2. Connect
+## 2. Connect Local Installed-User Profile
 
 Preview the authorization URL:
 
@@ -56,7 +108,7 @@ Connect with Daniel's Eidos login:
 bin/lineardb --account greenmark connect
 ```
 
-Expected result:
+Expected result for the installed-user flow:
 
 - `viewer.email` is `daniel@eidosagi.com`.
 - `has_required_team` is true for `GMW`.

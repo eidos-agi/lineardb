@@ -59,6 +59,19 @@ class LinearDBTests(unittest.TestCase):
                 )
                 self.assertEqual(get_token(account="greenmark"), "Bearer access-token")
 
+    def test_eidos_profile_aliases_greenmark_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "credentials.sqlite"
+            with patch.dict(os.environ, {"LINEARDB_TOKEN_DB": str(db_path)}, clear=True):
+                save_token_response(
+                    "greenmark",
+                    {"access_token": "access-token", "refresh_token": "refresh-token", "expires_in": 3600},
+                )
+                self.assertEqual(get_token(account="eidos"), "Bearer access-token")
+
+    def test_default_team_key_for_eidos_profile(self):
+        self.assertEqual(default_team_key("eidos"), "EID")
+
     def test_expired_token_refreshes_and_rotates_refresh_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "credentials.sqlite"
